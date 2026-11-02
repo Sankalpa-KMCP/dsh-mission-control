@@ -1,0 +1,17 @@
+{
+  "name": "dsh-mission-control",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Portable autonomous multi-agent software engineering platform built on DeepSeek Harness",
+  "scripts": {
+    "test": "node --experimental-strip-types tests/run-all.ts",
+    "test:unit": "node --experimental-strip-types tests/run-unit.ts",
+    "test:integration": "node --experimental-strip-types tests/run-integration.ts",
+    "typecheck": "node --experimental-strip-types scripts/typecheck.ts"
+  },
+  "engines": {
+    "node": ">=22.5.0"
+  },
+  "license": "UNLICENSED"
+}

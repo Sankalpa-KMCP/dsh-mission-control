@@ -8,6 +8,17 @@ build/
 out/
 *.tsbuildinfo
 
+# SQLite Database & Journal Files (Strict Protection)
+*.db
+*.db-*
+*.db-wal
+*.db-shm
+*.sqlite
+*.sqlite3
+*.sqlite-*
+*.sqlite-wal
+*.sqlite-shm
+
 # Environment & Credentials (Strict Protection)
 .env
 .env.*
@@ -19,18 +30,21 @@ out/
 *credentials*
 .credentials.yaml
 
-# Runtime & Session Data
+# Runtime, Session Data & Telemetry
 logs/
 *.log
 temp/
 tmp/
 .cache/
-*.sqlite
-*.sqlite3
+session-data/
+sessions/
+*.session
 
-# Test Coverage
+# Test Coverage & Artifacts
 coverage/
 .nyc_output/
+test-results/
+*.junit.xml
 
 # IDE & Editor
 .vscode/*

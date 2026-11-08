@@ -112,6 +112,20 @@ export class TaskScheduler {
         return !dep || dep.status !== 'completed';
       });
 
+      // Terminal blocker propagation: a task whose dependency has failed or
+      // been cancelled can never run. Cascade cancellation keeps the mission
+      // graph consistent and allows the mission to finalize as failed
+      // instead of stalling with permanently blocked work.
+      const deadBlocker = task.blockedBy
+        .map(depId => taskMap.get(depId))
+        .find(dep => dep && (dep.status === 'failed' || dep.status === 'cancelled'));
+      if (deadBlocker) {
+        if (task.status !== 'cancelled') {
+          this.cancelTask(task.id, `Upstream dependency "${deadBlocker.id}" ${deadBlocker.status}`);
+          continue;
+        }
+      }
+
       if (hasUnfinishedBlockers) {
         blockedTasks.push(task);
         if (task.status !== 'blocked') {

@@ -149,10 +149,14 @@ describe('Fault Injection Integration Tests', () => {
     const outcome = await gateway.admitAndDispatch(req);
     assert.strictEqual(outcome.kind, 'admitted');
 
-    // Activation marked uncertain / failed in dispatch catch
+    // A definite startup failure means the worker never began executing:
+    // the activation is terminated and the slot is released immediately
+    // (not held uncertain), so capacity cannot leak under repeated failures.
     const act = store.getActivationByRequestId(req.id);
     assert.notStrictEqual(act, null);
-    assert.strictEqual(act!.state, 'uncertain');
+    assert.strictEqual(act!.state, 'terminated');
+    assert.ok(act!.failureReason!.includes('Startup failed'));
+    assert.strictEqual(store.countActiveOrReservedWorkers(), 0);
   });
 
   it('handles cancellation of hanging worker', async () => {

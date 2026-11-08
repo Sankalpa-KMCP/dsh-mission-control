@@ -10,10 +10,14 @@ import * as Contracts from '../packages/contracts/src/index.ts';
 import * as Kernel from '../packages/kernel/src/index.ts';
 import * as RuntimeSimulator from '../packages/runtime-simulator/src/index.ts';
 import * as DshAdapter from '../packages/dsh-adapter/src/index.ts';
+import * as Orchestrator from '../packages/orchestrator/src/index.ts';
+import * as Server from '../packages/server/src/index.ts';
 
 console.log(`✓ Contracts package loaded: ${Object.keys(Contracts).length} exports`);
 console.log(`✓ Kernel package loaded: ${Object.keys(Kernel).length} exports`);
 console.log(`✓ Runtime Simulator package loaded: ${Object.keys(RuntimeSimulator).length} exports`);
+console.log(`✓ Orchestrator package loaded: ${Object.keys(Orchestrator).length} exports`);
+console.log(`✓ Server package loaded: ${Object.keys(Server).length} exports`);
 console.log(`✓ DSH Adapter package loaded: ${Object.keys(DshAdapter).length} exports`);
 
 // Runtime contract assertions

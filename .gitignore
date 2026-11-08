@@ -58,3 +58,7 @@ test-results/
 .DS_Store
 Thumbs.db
 desktop.ini
+
+# Mission Control runtime data
+mission-control.db*
+data/

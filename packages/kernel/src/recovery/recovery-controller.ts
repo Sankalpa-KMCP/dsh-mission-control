@@ -44,9 +44,12 @@ export class RecoveryController {
     const allTasks = this.store.listTasks(missionId);
     const inProgressTasks = allTasks.filter(t => t.status === 'in_progress');
 
-    // 1. Reconcile non-terminal activations
-    const uncertainActs = this.store.listUncertainActivations();
-    for (const act of uncertainActs) {
+    // 1. Reconcile every non-terminal activation against the live runtime.
+    //    After a host crash, 'active'/'starting' activations exist only as
+    //    persisted records; the runtime decides whether the worker is still
+    //    alive. Unknown workers report terminated and release their slots.
+    const nonTerminalActs = this.store.listNonTerminalActivations();
+    for (const act of nonTerminalActs) {
       try {
         const status = await this.runtime.pollWorker(act.id);
         if (status.state === 'terminated') {
@@ -54,12 +57,13 @@ export class RecoveryController {
             ...act,
             state: 'terminated',
             endedAt: new Date().toISOString(),
+            ...(act.failureReason ? {} : { failureReason: 'Reconciled as terminated after restart' }),
           });
           this.store.releaseReservation(act.reservationId);
           releasedReservations++;
           reconciledActivations++;
         } else {
-          // Worker state remains uncertain; hold capacity
+          // Worker reports live or unknown; hold capacity until resolved.
           uncertainReservationsHeld++;
         }
       } catch {

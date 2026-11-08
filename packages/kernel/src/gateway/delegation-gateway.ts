@@ -48,6 +48,8 @@ export class DelegationGateway {
   private readonly store: SqliteStore;
   private readonly policyEngine: ModelPolicyEngine;
   private readonly runtime: AgentRuntime;
+  /** Task-to-activation index for in-flight workers, enabling cancellation. */
+  private readonly inFlightByTask = new Map<TaskId, ActivationId>();
 
   constructor(
     store: SqliteStore,
@@ -57,6 +59,17 @@ export class DelegationGateway {
     this.store = store;
     this.policyEngine = policyEngine;
     this.runtime = runtime;
+  }
+
+  /**
+   * Request cancellation of the in-flight worker executing the given task.
+   * Returns false when no worker is currently in flight for the task.
+   */
+  public async cancelForTask(taskId: TaskId): Promise<boolean> {
+    const activationId = this.inFlightByTask.get(taskId);
+    if (!activationId) return false;
+    await this.runtime.cancelWorker(activationId);
+    return true;
   }
 
   /**
@@ -264,6 +277,7 @@ export class DelegationGateway {
     try {
       this.store.saveActivation({ ...activation, state: 'active' });
       this.store.saveReservation({ ...reservation, state: 'active' });
+      this.inFlightByTask.set(request.taskId, activation.id);
 
       const execResult = await this.runtime.startWorker(activation, request, modelRoute);
 
@@ -307,18 +321,47 @@ export class DelegationGateway {
         this.store.releaseReservation(reservation.id);
       }
     } catch (dispatchErr) {
-      // Dispatch failure: mark activation and reservation uncertain or terminated
+      // Dispatch failure: classify the outcome.
+      // A definite startup failure means the worker never began executing, so the
+      // slot can be released immediately. Any other dispatch error leaves the
+      // outcome genuinely unknown: the activation and reservation are marked
+      // uncertain and capacity stays held until verified evidence arrives.
       const failTime = new Date().toISOString();
       const reason = dispatchErr instanceof Error ? dispatchErr.message : String(dispatchErr);
+      const definiteStartupFailure =
+        dispatchErr instanceof MissionControlError && dispatchErr.code === 'RUNTIME_STARTUP_FAILED';
 
-      this.store.saveActivation({
-        ...activation,
-        state: 'uncertain',
-        failureReason: `Dispatch threw error: ${reason}`,
-      });
-      this.store.markReservationUncertain(reservation.id, `Dispatch error: ${reason}`);
+      if (definiteStartupFailure) {
+        this.store.saveActivation({
+          ...activation,
+          state: 'terminated',
+          endedAt: failTime,
+          exitCode: 1,
+          failureReason: `Startup failed: ${reason}`,
+        });
+        this.store.saveAgent({ ...childAgent, status: 'terminated', updatedAt: failTime });
+        this.store.releaseReservation(reservation.id);
+        this.store.appendAuditEvent({
+          id: asAuditEventId(`audit-${randomUUID()}`),
+          missionId: request.missionId,
+          eventType: 'worker/released',
+          entityId: reservation.id,
+          timestamp: failTime,
+          payload: { childAgentId: childAgent.id, reason: 'startup-failed' },
+        });
+      } else {
+        this.store.saveActivation({
+          ...activation,
+          state: 'uncertain',
+          failureReason: `Dispatch threw error: ${reason}`,
+        });
+        this.store.markReservationUncertain(reservation.id, `Dispatch error: ${reason}`);
+      }
     }
 
+    // All dispatch paths converge here; the in-flight index entry is cleared
+    // once the activation has been reconciled (or marked uncertain).
+    this.inFlightByTask.delete(request.taskId);
     return { kind: 'admitted', admission };
   }
 

@@ -62,3 +62,4 @@ desktop.ini
 # Mission Control runtime data
 mission-control.db*
 data/
+gui-test-screenshots/

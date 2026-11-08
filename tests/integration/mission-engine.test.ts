@@ -6,6 +6,7 @@ import { join } from 'node:path';
 import { MissionControlHub } from '../../packages/orchestrator/src/index.ts';
 import { SimulatedMissionPlanner } from '../../packages/orchestrator/src/index.ts';
 import { SimulatedVerificationProvider } from '../../packages/orchestrator/src/index.ts';
+import type { MissionPlanner, MissionPlan } from '../../packages/orchestrator/src/index.ts';
 import { MissionControlError } from '../../packages/contracts/src/index.ts';
 
 describe('Mission Engine Integration Tests', () => {
@@ -50,10 +51,24 @@ describe('Mission Engine Integration Tests', () => {
   });
 
   it('completes missions despite transient worker crashes via bounded retries', async () => {
+    // Crash faults produce DEFINITE worker failures that burn attempts. With
+    // the default 3 retries and crashProbability 0.5, a task would still fail
+    // permanently ~6% of the time (mission failure ~44%) — statistically
+    // flaky. Raising the retry budget makes recovery the overwhelmingly
+    // probable outcome while still guaranteeing real retries occur.
+    const resilientPlanner: MissionPlanner = {
+      name: 'resilient-test-planner',
+      plan: mission =>
+        ((base: MissionPlan) => ({
+          plannerName: base.plannerName,
+          tasks: base.tasks.map(t => ({ ...t, maxRetries: 12 })),
+        }))(new SimulatedMissionPlanner().plan(mission)),
+    };
     const hub = MissionControlHub.open({
       dbLocation: ':memory:',
       tickIntervalMs: 20,
       orphanGraceTicks: 120,
+      planner: resilientPlanner,
       simFaults: { crashProbability: 0.5 },
     });
     const mission = hub.createMission({
@@ -62,7 +77,7 @@ describe('Mission Engine Integration Tests', () => {
     });
     hub.startMission(mission.id);
 
-    const deadline = Date.now() + 30000;
+    const deadline = Date.now() + 60000;
     let detail = hub.getMission(mission.id);
     while (detail.mission.status === 'active' && Date.now() < deadline) {
       await new Promise(r => setTimeout(r, 50));

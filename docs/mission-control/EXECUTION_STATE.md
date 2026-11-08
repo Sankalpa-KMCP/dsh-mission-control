@@ -10,58 +10,53 @@ Transform the repository into a comprehensive, production-oriented autonomous mu
 
 ## Current Git State
 
-- **Branch:** `main` (M4 merged; starting M5/M7 work)
-- **Main branch:** `main`
+- **Branch:** `main` — all milestone work merged
 - **Merged PRs:**
-  - PR #1 — `feat(kernel): Milestone M1 Autonomous Team Kernel` — **MERGED** (merge commit `5061a00`, 2026-11-08). 48/48 tests + typecheck green before merge.
-  - PR #2 — `feat(orchestrator): Milestone M2 Mission engine and REST/SSE API` — **MERGED** (merge commit `1d1b567`, 2026-11-08). 77/77 tests + typecheck green before merge.
-  - PR #3 — `feat(dashboard): Milestone M4 Mission Control dashboard` — **MERGED** (merge commit `f9856e2`, 2026-11-08). 78/78 tests + typecheck + vite build + full browser E2E green before merge.
+  - PR #1 — `feat(kernel): Milestone M1 Autonomous Team Kernel` — merge `5061a00` (2026-11-08). 48/48 tests before merge.
+  - PR #2 — `feat(orchestrator): Milestone M2 Mission engine and REST/SSE API` — merge `1d1b567` (2026-11-08). 77/77 tests before merge.
+  - PR #3 — `feat(dashboard): Milestone M4 Mission Control dashboard` — merge `f9856e2` (2026-11-08). 78/78 tests + vite build + full browser E2E before merge.
+  - PR #4 — `feat(server): M5/M7 demonstration mission, API rate limiting, honest connected-mode guard` — merge `1ddd24d` (2026-11-08). 82/82 tests before merge.
+  - PR #5 — `docs(m10): operator guide, API reference, config reference, as-built map, README refresh` — merge `dc2add8` (2026-11-08). 82/82 tests before merge.
 
 ## Completed Milestones
 
 | Milestone | Status | Evidence |
 |---|---|---|
-| M1 — Kernel | ✅ Merged (PR #1) | `packages/kernel`: SqliteStore (node:sqlite, WAL, CAS), ModelPolicyEngine (16 workers / depth 3 / Gemini route), DelegationGateway (9-step admission), TaskScheduler (cycle detection, critical path, write-scope collision avoidance, deadlock slot reservation), RecoveryController, VerificationGate |
-| M2 — Mission engine + REST/SSE API | ✅ Merged (PR #2) | `packages/orchestrator` (MissionControlHub, per-mission engine loop, simulated planner/verifier), `packages/server` (zero-dep node:http REST + SSE replay + constant-time bearer auth + static serving + env validation). Terminal-blocker propagation, orphan requeue, per-request idempotency keys, shutdown guards |
-| M4 — Dashboard | ✅ Merged (PR #3) | `packages/dashboard`: React 18 + Vite 5 + TS; views Overview / Missions / Mission Detail (6 tabs) / Agent Hierarchy / Execution Monitor / System & Config; SSE live store w/ polling fallback; SVG DAG/board/timeline/tree/capacity ring; ErrorBoundary; server auto-serves built dist |
+| M1 — Kernel | ✅ Merged (PR #1) | SqliteStore (node:sqlite, WAL, CAS, migrations), ModelPolicyEngine (16 workers / depth 3 / Gemini route, task-adaptive reasoning), DelegationGateway (9-step atomic admission), TaskScheduler (cycles, critical path, write-scope collision avoidance, deadlock reservation), RecoveryController, VerificationGate (verifier ≠ author, stale-artifact rejection) |
+| M2 — Mission engine + REST/SSE API | ✅ Merged (PR #2) | MissionControlHub + per-mission engine loop (plan→schedule→delegate→verify→complete/fail), transient-refusal backoff without attempt burn, orphan requeue, per-request idempotency keys, shutdown guards; zero-dep node:http server with SSE `Last-Event-ID` replay, constant-time bearer auth, CORS allowlist, 1 MiB body cap, traversal-guarded static serving, strict env validation |
+| M4 — Dashboard | ✅ Merged (PR #3) | React 18 + Vite 5 + TS; Overview / Mission Workspace / Mission Detail (table, board, DAG, timeline, evidence, audit) / Agent Hierarchy (SVG tree + capacity ring) / Execution Monitor (SSE live, filters, autoscroll) / System & Config; stable-store fix (React #185) + ErrorBoundary; server auto-serves `packages/dashboard/dist`; browser E2E verified black-box |
+| M5 — DSH connection state | ✅ Merged (PR #4) | `docs/mission-control/DSH_CONNECTION.md`; `MISSION_CONTROL_MODE=connected` refuses to start (`CONNECTED_MODE_UNAVAILABLE`) until a real adapter exists — no disguised simulation; adapter contract pinned (`b830ec9` / v0.2.1-rc.5) |
+| M7 — Security hardening | ✅ Merged (PR #4) | Sliding-window rate limiting (default 240/min, `Retry-After`, health exempt, per-IP+token-fingerprint keys, memory-capped), connected-mode guard; existing: constant-time auth, CORS, body cap, traversal guard |
+| M10 — Documentation | ✅ Merged (PR #5) | README refresh, API_REFERENCE, CONFIG_REFERENCE, OPERATOR_GUIDE (troubleshooting + honest known limitations), architecture as-built map (paths verified), EXECUTION_STATE |
 
-## Verified Test Outcomes (latest on this branch)
+## Verified Test Outcomes (latest)
 
-- `npm test` — **78 pass / 0 fail** (77 + new static-dir resolution test).
+- `npm test` — **82 pass / 0 fail** (unit + integration + HTTP E2E; includes rate-limit, connected-guard, static-dir, SSE replay, recovery, fault-injection suites).
 - `npm run typecheck` — all package contract invariants pass.
-- Dashboard: `npx tsc --noEmit` clean; `vite build` clean (46 modules, ~193 kB JS).
-- Browser E2E (in-app browser, black-box GUI): overview, missions list, create-mission modal (incl. empty-submit validation), mission detail all 6 tabs (table/board/DAG/timeline/evidence/audit), agent hierarchy (37 agents tree + capacity ring), execution monitor (SSE live pill, 125/125 events, delegation lifecycle), system view, mission start via GUI with live status transition. Screenshots in `gui-test-screenshots/` (gitignored).
-- Bugs found & fixed during E2E: (1) overview horizontal overflow — grid children missing `min-width: 0`; (2) footer stuck at "Connecting…" — global transport is polling, now reported honestly; (3) **critical** — mission detail blanked the whole app: `useMissionStream` snapshot returned a fresh object literal per call → React error #185 infinite re-render; fixed with stable `EMPTY_STREAM` + added ErrorBoundary crash screen; (4) flaky mission-engine retry test — crash faults burn attempts, so p=0.5 with 3 retries fails the mission ~44% of runs; test now uses a planner wrapper raising maxRetries to 12 (P(fail) ≈ 0.1%), 6/6 reruns green.
+- Dashboard: `tsc --noEmit` + `vite build` clean.
+- `npm run demo` — deterministic fault-injected mission lifecycle, green (34 delegations / 9 tasks, startup-failure re-delegations, uncertain→recovery reconciliations, verification rework cycles visible in audit trail).
+- Browser E2E (PR #3): create/start mission via GUI, all 6 detail tabs, live SSE monitor (125/125 events), hierarchy (37 agents), system view, empty-form validation — all pass.
 
 ## Environment Notes
 
 - Node v26.13.0 at `/c/Program Files/nodejs` — **not on default Git Bash PATH**; prepend `export PATH="/c/Program Files/nodejs:$PATH"` per command.
-- Zero-dependency backend; dashboard deps (react, react-dom, vite, @vitejs/plugin-react, typescript) installed in `packages/dashboard` (package-lock committed).
-- GitHub CLI authenticated as `Sankalpa-KMCP`; repo `Sankalpa-KMCP/dsh-mission-control` (private); repo-local git identity: `Sankalpa-KMCP <218732772+Sankalpa-KMCP@users.noreply.github.com>` (GitHub email privacy blocks the real email).
+- Zero-dependency backend; only `packages/dashboard` has npm deps (react/react-dom + dev tooling; package-lock committed).
+- GitHub CLI authenticated as `Sankalpa-KMCP`; repo `Sankalpa-KMCP/dsh-mission-control` (private); no CI checks configured; repo-local git identity `218732772+Sankalpa-KMCP@users.noreply.github.com` (GitHub email privacy).
 - Shell cwd resets to `G:\dsh-mission-control\docs` between commands — `cd G:/dsh-mission-control` per command.
-- `npm start` runs the server on 127.0.0.1:4310 (loopback, unauthenticated dev mode) and auto-serves the built dashboard.
-
-## Architecture Snapshot (verified by code inspection)
-
-- `packages/contracts` — branded IDs, domain types; `MAX_WORKER_CAPACITY=16`, `MAX_DELEGATION_DEPTH=3`, route `antigravity-manager / Gemini-3.8-flash`; Task.acceptanceCriteria.
-- `packages/kernel` — SqliteStore (migrations v1+v2), ModelPolicyEngine, DelegationGateway (`admitAndDispatch` awaits worker execution and reconciles activation/reservation/agent internally; `inFlightByTask` guard; `cancelForTask`), TaskScheduler (readiness, failure burn, cascading cancel, dead-blocker propagation), RecoveryController (reconciles ALL non-terminal activations on restart), VerificationGate (verifier ≠ author, stale-artifact rejection).
-- `packages/runtime-simulator` — Mulberry32 fault injection: startup fail/delay, crash (→ definite failure, burns attempt), lost-ack (→ uncertain, holds slot), hang-until-cancel; `targetIdMatch` RegExp filter.
-- `packages/orchestrator` — MissionControlHub (mission CRUD + policy clamps + engine registry + tick loop + recovery), MissionEngine (claim → dispatch → settle → verify → complete/fail; TRANSIENT_REFUSAL_CODES backoff without attempt burn; orphan requeue after grace ticks; `shutdown()` guard), planner/verifier injectable via hub options.
-- `packages/server` — createMissionControlServer: CORS allowlist → OPTIONS → static (traversal-guarded, SPA fallback) → health (unauth) → auth (bearer header; `?token=` only for SSE) → SSE (Last-Event-ID replay, 200ms tail, 15s heartbeat) → JSON router. Config: `MISSION_CONTROL_PORT/HOST/TOKEN/MODE/DB/SIM_SEED/SIM_FAULTS/TICK_MS/ORPHAN_GRACE_TICKS/CORS_ORIGINS/STATIC_DIR`.
-- `packages/dashboard` — `src/store.ts` (global 2s polling + per-mission SSE w/ replay, `useSyncExternalStore`, stable `EMPTY_STREAM` snapshot), `src/api.ts` (typed fetch client, token in localStorage `mctrl.token`), views in `src/views/`, SVG components in `src/components/`, ErrorBoundary crash screen.
+- `npm start` → `http://127.0.0.1:4310`, auto-serves the built dashboard.
 
 ## Next Prioritized Work
 
-1. Demonstration mission script exercising the full lifecycle with faults (retries, rework, uncertain recovery) — `scripts/demo-mission.ts` + `npm run demo`.
-2. M7: security hardening pass — rate limiting, validation audit, path traversal tests.
-3. M5: execution adapter hardening + DSH connection guide (connected mode must report "unconfigured" honestly until credentials exist).
-4. M10: documentation — README refresh, architecture, API reference, config reference, operator guide, known limitations.
+1. **GitHub operations integration** — server-side `gh` CLI endpoints (repo/PR/CI status panels in the dashboard); credentials stay server-side, never exposed to the browser.
+2. **Real DSH Core adapter** — implement `DshCoreAdapter` (pinned contract in `packages/dsh-adapter`) as the kernel `AgentRuntime`; blocked on operator-provided DSH Core credentials; connected-mode guard already refuses to start without it.
+3. Validation/UX polish: more SSE reconnect hardening, dashboard a11y pass, optional mission templates beyond the fixed 9-task simulated planner.
+4. Optional M7+ hardening: per-route rate-limit tiers, persistent audit retention policy, TLS guidance at reverse proxy.
 
 ## Resume Instructions
 
-1. `cd G:\dsh-mission-control` (repo root). `git checkout feat/m3-dashboard` (or `main` if PR #3 merged).
+1. `cd G:\dsh-mission-control` (repo root). Work on a feature branch off `main`; PR → verify → merge.
 2. `export PATH="/c/Program Files/nodejs:$PATH"`.
-3. `npm test` and `npm run typecheck` must pass before any commit/push/PR. Dashboard build: `npm run dashboard:build`.
+3. `npm test` (82) and `npm run typecheck` must pass before any commit/push/PR. Dashboard: `npm run dashboard:build`.
 4. Check `gh pr list` for unmerged PRs; continue from "Next Prioritized Work".
-5. Never commit `data/`, `*.db`, `node_modules/`, `gui-test-screenshots/`, or credentials (verify with `git status` before each commit).
-6. Simulation is always labeled simulated — never disguise it as real model activity; connected mode stays honestly "not configured" until DSH credentials are provided by the operator.
+5. Never commit `data/`, `*.db`, `node_modules/`, `gui-test-screenshots/`, or credentials (`git status` before each commit).
+6. Simulation is always labelled simulated; connected mode stays honestly refused until a real adapter exists; never expose tokens in responses, logs, or commits.

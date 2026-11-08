@@ -13,6 +13,14 @@ export const MIGRATIONS: readonly Migration[] = Object.freeze([
       db.exec(MIGRATION_V1_SQL);
     },
   },
+  {
+    // v2: Tasks gain verifiable acceptance criteria used by the independent
+    // verification gate and surfaced in the Mission Control dashboard.
+    version: 2,
+    up: (db: DatabaseSync) => {
+      db.exec('ALTER TABLE tasks ADD COLUMN acceptance_criteria TEXT;');
+    },
+  },
 ]);
 
 export function runMigrations(db: DatabaseSync): number {

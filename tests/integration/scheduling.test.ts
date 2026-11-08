@@ -100,6 +100,40 @@ describe('Task Scheduling Integration Tests', () => {
     assert(taskA!.lastFailureReason!.includes('Dependency cycle detected'));
   });
 
+  it('propagates permanent upstream failure to downstream tasks (regression: blocked-forever stall)', () => {
+    // A -> B -> C chain. A fails permanently; B and C can never run.
+    addTask('task-chain-A');
+    addTask('task-chain-B', ['task-chain-A']);
+    addTask('task-chain-C', ['task-chain-B']);
+
+    // Drive A through its full retry budget to a permanent failure.
+    scheduler.evaluateReadiness(missionId);
+    for (let i = 0; i < 6; i++) {
+      const t = store.getTask(asTaskId('task-chain-A'))!;
+      if (t.status === 'failed') break;
+      if (t.status !== 'in_progress') {
+        store.updateTaskStatusCas(t.id, t.revision, 'in_progress');
+      }
+      const claimed = store.getTask(asTaskId('task-chain-A'))!;
+      scheduler.handleFailure(claimed, 'retries exhausted');
+    }
+    assert.strictEqual(store.getTask(asTaskId('task-chain-A'))!.status, 'failed');
+
+    // Propagation: B and C are cancelled with a diagnostic reason, not blocked forever.
+    scheduler.evaluateReadiness(missionId);
+    const taskB = store.getTask(asTaskId('task-chain-B'))!;
+    const taskC = store.getTask(asTaskId('task-chain-C'))!;
+    assert.strictEqual(taskB.status, 'cancelled');
+    assert.ok(taskB.lastFailureReason!.includes('task-chain-A'));
+    assert.strictEqual(taskC.status, 'cancelled');
+    assert.ok(taskC.lastFailureReason!.includes('cancelled'));
+
+    // Idempotent: re-evaluation must not resurrect or re-fail anything.
+    scheduler.evaluateReadiness(missionId);
+    assert.strictEqual(store.getTask(asTaskId('task-chain-B'))!.status, 'cancelled');
+    assert.strictEqual(store.getTask(asTaskId('task-chain-C'))!.status, 'cancelled');
+  });
+
   it('prioritizes critical-path tasks that unblock more downstream work', () => {
     // Task Independent (Priority normal, unblocks 0 tasks)
     addTask('task-indep', [], 'normal');

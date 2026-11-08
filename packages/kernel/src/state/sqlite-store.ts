@@ -117,18 +117,25 @@ export class SqliteStore {
     };
   }
 
+  public listMissionIds(): MissionId[] {
+    const stmt = this.db.prepare('SELECT id FROM missions ORDER BY created_at ASC;');
+    const rows = stmt.all() as unknown as { id: string }[];
+    return rows.map(row => asMissionId(String(row.id)));
+  }
+
   // ================= Tasks =================
 
   public saveTask(task: Task): void {
     const stmt = this.db.prepare(`
       INSERT INTO tasks (
-        id, mission_id, title, description, status, priority,
+        id, mission_id, title, description, acceptance_criteria, status, priority,
         blocked_by, write_scopes, owner_agent_id, revision, attempt_count,
         max_retries, artifact_revision, last_failure_reason, created_at, updated_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       ON CONFLICT(id) DO UPDATE SET
         title = excluded.title,
         description = excluded.description,
+        acceptance_criteria = excluded.acceptance_criteria,
         status = excluded.status,
         priority = excluded.priority,
         blocked_by = excluded.blocked_by,
@@ -147,6 +154,7 @@ export class SqliteStore {
       task.missionId,
       task.title,
       task.description,
+      task.acceptanceCriteria ?? null,
       task.status,
       task.priority,
       JSON.stringify(task.blockedBy),
@@ -166,12 +174,22 @@ export class SqliteStore {
     const stmt = this.db.prepare('SELECT * FROM tasks WHERE id = ?;');
     const row = stmt.get(id) as unknown as Record<string, unknown> | undefined;
     if (!row) return null;
+    return SqliteStore.rowToTask(row);
+  }
 
+  public listTasks(missionId: MissionId): Task[] {
+    const stmt = this.db.prepare('SELECT * FROM tasks WHERE mission_id = ? ORDER BY created_at ASC;');
+    const rows = stmt.all(missionId) as unknown as Record<string, unknown>[];
+    return rows.map(SqliteStore.rowToTask);
+  }
+
+  private static rowToTask(row: Record<string, unknown>): Task {
     return {
       id: asTaskId(String(row.id)),
       missionId: asMissionId(String(row.mission_id)),
       title: String(row.title),
       description: String(row.description),
+      acceptanceCriteria: row.acceptance_criteria ? String(row.acceptance_criteria) : undefined,
       status: row.status as TaskStatus,
       priority: row.priority as Task['priority'],
       blockedBy: JSON.parse(String(row.blocked_by)),
@@ -185,30 +203,6 @@ export class SqliteStore {
       createdAt: String(row.created_at),
       updatedAt: String(row.updated_at),
     };
-  }
-
-  public listTasks(missionId: MissionId): Task[] {
-    const stmt = this.db.prepare('SELECT * FROM tasks WHERE mission_id = ? ORDER BY created_at ASC;');
-    const rows = stmt.all(missionId) as unknown as Record<string, unknown>[];
-
-    return rows.map(row => ({
-      id: asTaskId(String(row.id)),
-      missionId: asMissionId(String(row.mission_id)),
-      title: String(row.title),
-      description: String(row.description),
-      status: row.status as TaskStatus,
-      priority: row.priority as Task['priority'],
-      blockedBy: JSON.parse(String(row.blocked_by)),
-      writeScopes: JSON.parse(String(row.write_scopes)),
-      ownerAgentId: row.owner_agent_id ? asAgentId(String(row.owner_agent_id)) : undefined,
-      revision: Number(row.revision),
-      attemptCount: Number(row.attempt_count),
-      maxRetries: Number(row.max_retries),
-      artifactRevision: row.artifact_revision ? String(row.artifact_revision) : undefined,
-      lastFailureReason: row.last_failure_reason ? String(row.last_failure_reason) : undefined,
-      createdAt: String(row.created_at),
-      updatedAt: String(row.updated_at),
-    }));
   }
 
   /**
@@ -545,8 +539,18 @@ export class SqliteStore {
   }
 
   public listUncertainActivations(): Activation[] {
-    const stmt = this.db.prepare("SELECT * FROM activations WHERE state = 'uncertain';");
-    const rows = stmt.all() as unknown as Record<string, unknown>[];
+    return this.listActivationsByStates(['uncertain']);
+  }
+
+  /** All activations that may still correspond to a live or unresolved worker. */
+  public listNonTerminalActivations(): Activation[] {
+    return this.listActivationsByStates(['starting', 'active', 'uncertain']);
+  }
+
+  private listActivationsByStates(states: readonly ActivationState[]): Activation[] {
+    const placeholders = states.map(() => '?').join(', ');
+    const stmt = this.db.prepare(`SELECT * FROM activations WHERE state IN (${placeholders});`);
+    const rows = stmt.all(...states) as unknown as Record<string, unknown>[];
 
     return rows.map(row => ({
       id: asActivationId(String(row.id)),
@@ -604,6 +608,42 @@ export class SqliteStore {
       evidence: JSON.parse(String(row.evidence)),
       evaluatedAt: String(row.evaluated_at),
     };
+  }
+
+  public listVerificationRecords(missionId: MissionId): VerificationRecord[] {
+    const stmt = this.db.prepare(`
+      SELECT vr.* FROM verification_records vr
+      JOIN tasks t ON t.id = vr.task_id
+      WHERE t.mission_id = ?
+      ORDER BY vr.evaluated_at ASC;
+    `);
+    const rows = stmt.all(missionId) as unknown as Record<string, unknown>[];
+
+    return rows.map(row => ({
+      id: asVerificationId(String(row.id)),
+      taskId: asTaskId(String(row.task_id)),
+      artifactRevision: String(row.artifact_revision),
+      verifierAgentId: asAgentId(String(row.verifier_agent_id)),
+      status: row.status as VerificationRecord['status'],
+      findings: String(row.findings),
+      evidence: JSON.parse(String(row.evidence)),
+      evaluatedAt: String(row.evaluated_at),
+    }));
+  }
+
+  /**
+   * Delete a mission and all dependent rows. Most tables cascade via FK;
+   * audit_events and recovery_intents have no mission FK, so they are
+   * removed explicitly. Callers must enforce that the mission is terminal.
+   */
+  public deleteMission(id: MissionId): boolean {
+    return this.transaction(() => {
+      this.db.prepare('DELETE FROM audit_events WHERE mission_id = ?;').run(id);
+      this.db.prepare('DELETE FROM recovery_intents WHERE mission_id = ?;').run(id);
+      const stmt = this.db.prepare('DELETE FROM missions WHERE id = ?;');
+      const result = stmt.run(id);
+      return Number(result.changes) > 0;
+    });
   }
 
   // ================= Audit Events =================

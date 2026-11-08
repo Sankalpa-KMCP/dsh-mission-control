@@ -6,3 +6,4 @@ import './unit/contracts.test.ts';
 import './unit/policy-engine.test.ts';
 import './unit/sqlite-store.test.ts';
 import './unit/verification-gate.test.ts';
+import './unit/simulated-planner.test.ts';

@@ -51,21 +51,14 @@ dsh-mission-control/
 
 ---
 
-## 4. Current Milestone: M1 Autonomous Engineering Kernel
+## 4. Current Status
 
-- **Milestone Status**: M1 In Progress (Simulated Orchestration Kernel)
-- **Implemented Scope**:
-  - TypeScript monorepo foundation with strict compiler checks.
-  - Strongly typed domain contracts.
-  - Native SQLite state store with schema migrations, CAS, and event journal.
-  - Model policy engine and trusted Delegation Gateway.
-  - Dependency-aware task scheduler with deadlock prevention.
-  - Deterministic runtime simulator with fault injection.
-  - Recovery controller and independent verification state machine.
-  - DSH adapter contract interfaces and mocks.
-  - Comprehensive automated test suite.
-- **Planned Subsequent Milestones**:
-  - **M2**: DSH Core Adapter & Live Layered Enforcement (Live Cordis plugin integration).
-  - **M3**: Worktree Isolation & Multi-Agent Swarm Integration.
-  - **M4**: Mission Control Dashboard (React Web GUI).
+- **Stage**: Orchestration Kernel + Mission Engine + HTTP API (M1 merged; M2 in review)
+- **Implemented and verified**:
+  - Kernel: SQLite persistence (WAL, monotone migrations), CAS task transitions, 16-worker capacity enforcement, delegation depth ≤ 3, independent verification gate, dependency scheduler with cycle detection, terminal-blocker propagation, and crash-recovery reconciliation.
+  - Orchestrator (`packages/orchestrator`): deterministic mission planner, mission engine (plan → schedule → delegate → verify → complete/fail), bounded retries, pause/resume/cancel, orphan requeue, durable recovery on restart.
+  - Server (`packages/server`): zero-dependency `node:http` REST API + SSE event streams, bearer-token auth (constant-time comparison), CORS allowlist, strict config validation, static dashboard serving.
+  - 77 automated tests (unit + integration + HTTP E2E) passing; architecture typecheck passing.
+- **Running the server**: `npm start` (defaults: `http://127.0.0.1:4310`, SQLite at `data/mission-control.db`; see `docs/mission-control/EXECUTION_STATE.md` for environment variables).
+- **Next**: graphical Mission Control dashboard (React), GitHub operations integration, DSH connection guide.
 - **License**: Private & Confidential — All rights reserved.

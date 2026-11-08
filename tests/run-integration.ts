@@ -8,3 +8,5 @@ import './integration/persistence-recovery.test.ts';
 import './integration/scheduling.test.ts';
 import './integration/fault-injection.test.ts';
 import './integration/dsh-adapter-contracts.test.ts';
+import './integration/mission-engine.test.ts';
+import './integration/api-server.test.ts';

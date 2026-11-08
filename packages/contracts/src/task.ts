@@ -24,6 +24,11 @@ export interface Task {
   readonly missionId: MissionId;
   readonly title: string;
   readonly description: string;
+  /**
+   * Verifiable acceptance criteria for this task. Independent verification
+   * evaluates the produced artifact against these criteria.
+   */
+  readonly acceptanceCriteria?: string;
   readonly status: TaskStatus;
   readonly priority: TaskPriority;
   readonly blockedBy: readonly TaskId[];

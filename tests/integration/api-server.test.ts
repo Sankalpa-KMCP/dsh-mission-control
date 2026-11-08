@@ -13,7 +13,7 @@ import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { loadConfigFromEnv, ConfigValidationError } from '../../packages/server/src/config.ts';
-import { createMissionControlServer } from '../../packages/server/src/index.ts';
+import { createMissionControlServer, startMissionControlServer } from '../../packages/server/src/index.ts';
 import { MissionControlHub } from '../../packages/orchestrator/src/index.ts';
 
 interface TestServer {
@@ -456,6 +456,51 @@ describe('Mission Control API Server', () => {
     const body = (await res.json()) as ApiError;
     assert.strictEqual(body.error.code, 'NOT_FOUND');
   });
+
+  it('returns 429 with Retry-After after the budget is exhausted and exempts /api/health', async () => {
+    server = await startTestServer({
+      MISSION_CONTROL_RATE_LIMIT_MAX: '5',
+      MISSION_CONTROL_RATE_LIMIT_WINDOW_MS: '60000',
+    });
+
+    const codes: number[] = [];
+    for (let i = 0; i < 8; i++) {
+      const res = await fetch(`${server.base}/api/system/status`);
+      codes.push(res.status);
+      await res.json().catch(() => null);
+    }
+    assert.deepStrictEqual(codes.slice(0, 5), [200, 200, 200, 200, 200], 'budget requests must succeed');
+    assert.strictEqual(codes[5], 429);
+    assert.strictEqual(codes[6], 429);
+
+    const limited = await fetch(`${server.base}/api/system/status`);
+    assert.strictEqual(limited.status, 429);
+    assert.ok(Number(limited.headers.get('retry-after')) >= 1, 'Retry-After must be present');
+    const body = (await limited.json()) as ApiError;
+    assert.strictEqual(body.error.code, 'RATE_LIMITED');
+
+    // Liveness probes are exempt so saturation cannot blind monitoring.
+    const health = await fetch(`${server.base}/api/health`);
+    assert.strictEqual(health.status, 200);
+  });
+
+  it('restores access once the rate-limit window slides', async () => {
+    server = await startTestServer({
+      MISSION_CONTROL_RATE_LIMIT_MAX: '2',
+      MISSION_CONTROL_RATE_LIMIT_WINDOW_MS: '1000',
+    });
+
+    await fetch(`${server.base}/api/system/status`);
+    await fetch(`${server.base}/api/system/status`);
+    const limited = await fetch(`${server.base}/api/system/status`);
+    assert.strictEqual(limited.status, 429);
+    await limited.json().catch(() => null);
+
+    await new Promise(resolve => setTimeout(resolve, 1200));
+    const ok = await fetch(`${server.base}/api/system/status`);
+    assert.strictEqual(ok.status, 200);
+    await ok.json().catch(() => null);
+  });
 });
 
 describe('Server configuration validation', () => {
@@ -531,5 +576,45 @@ describe('Server configuration validation', () => {
     } else {
       assert.strictEqual(auto.staticDir, null);
     }
+  });
+
+  it('applies sane rate-limit defaults, clamps the window, and validates the budget', () => {
+    const defaults = loadConfigFromEnv({ MISSION_CONTROL_DB: ':memory:' } as unknown as NodeJS.ProcessEnv);
+    assert.strictEqual(defaults.rateLimitMaxRequests, 240);
+    assert.strictEqual(defaults.rateLimitWindowMs, 60000);
+
+    // 0 disables the limiter.
+    const off = loadConfigFromEnv({
+      MISSION_CONTROL_RATE_LIMIT_MAX: '0',
+    } as unknown as NodeJS.ProcessEnv);
+    assert.strictEqual(off.rateLimitMaxRequests, 0);
+
+    // Window is clamped into [1000, 3600000].
+    const clamped = loadConfigFromEnv({
+      MISSION_CONTROL_RATE_LIMIT_WINDOW_MS: '10',
+    } as unknown as NodeJS.ProcessEnv);
+    assert.strictEqual(clamped.rateLimitWindowMs, 1000);
+
+    assert.throws(
+      () =>
+        loadConfigFromEnv({
+          MISSION_CONTROL_RATE_LIMIT_MAX: '-3',
+        } as unknown as NodeJS.ProcessEnv),
+      ConfigValidationError
+    );
+  });
+
+  it('refuses to start in connected mode until a real DSH Core adapter exists', async () => {
+    // Honest-mode guard: connected mode without an adapter would silently run
+    // the simulated runtime while the operator believes execution is real.
+    const config = loadConfigFromEnv({
+      MISSION_CONTROL_MODE: 'connected',
+      MISSION_CONTROL_DB: ':memory:',
+      MISSION_CONTROL_PORT: '0',
+    } as unknown as NodeJS.ProcessEnv);
+    await assert.rejects(
+      () => startMissionControlServer(config),
+      /CONNECTED_MODE_UNAVAILABLE|DSH Core adapter/
+    );
   });
 });

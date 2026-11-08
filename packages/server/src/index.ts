@@ -22,6 +22,7 @@ import {
 } from './http/router.ts';
 import { createStaticFileServer, type StaticFileServer } from './http/static.ts';
 import { resolveFromSeq, streamMissionEvents } from './http/sse.ts';
+import { RateLimiter } from './http/rate-limit.ts';
 
 export interface MissionControlServerHandle {
   readonly server: Server;
@@ -50,8 +51,15 @@ export function createMissionControlServer(
   const staticServer: StaticFileServer | null =
     config.staticDir && existsSync(config.staticDir) ? createStaticFileServer(config.staticDir) : null;
 
+  // API rate limiting: sheds abusive load before auth/routing work. Health is
+  // exempt so liveness probes stay responsive under saturation.
+  const rateLimiter = new RateLimiter({
+    maxRequests: config.rateLimitMaxRequests,
+    windowMs: config.rateLimitWindowMs,
+  });
+
   const server = createServer((req, res) => {
-    void handleRequest(req, res, config, hub, routes, staticServer).catch(err => {
+    void handleRequest(req, res, config, hub, routes, staticServer, rateLimiter).catch(err => {
       // Last-resort guard: never leave a request hanging.
       try {
         sendResponse(res, errorToResponse(err));
@@ -80,6 +88,18 @@ export function createMissionControlServer(
 export async function startMissionControlServer(
   config: ServerConfig
 ): Promise<{ handle: MissionControlServerHandle; ready: Promise<{ port: number }> }> {
+  if (config.mode === 'connected') {
+    // Honest-mode guard: no real DSH Core adapter exists yet. Starting in
+    // "connected" mode would silently run the simulated runtime while the
+    // operator believes model-backed execution is active — that disguise is
+    // exactly what this platform must never do. Refuse until a real adapter
+    // implementing packages/dsh-adapter contracts is wired in.
+    throw new MissionControlError(
+      'MISSION_CONTROL_MODE=connected requires a DSH Core adapter, which is not yet implemented. ' +
+        'Use MISSION_CONTROL_MODE=simulation (execution is honestly labelled simulated end-to-end).',
+      'CONNECTED_MODE_UNAVAILABLE'
+    );
+  }
   const hub = MissionControlHub.open({
     dbLocation: config.dbLocation,
     simSeed: config.simSeed,
@@ -108,7 +128,8 @@ async function handleRequest(
   config: ServerConfig,
   hub: MissionControlHub,
   routes: readonly CompiledRoute[],
-  staticServer: StaticFileServer | null
+  staticServer: StaticFileServer | null,
+  rateLimiter: RateLimiter
 ): Promise<void> {
   const url = new URL(req.url ?? '/', `http://${req.headers['host'] ?? 'localhost'}`);
   const path = url.pathname;
@@ -119,6 +140,24 @@ async function handleRequest(
     res.writeHead(204, { 'Access-Control-Max-Age': '600' });
     res.end();
     return;
+  }
+
+  if (path.startsWith('/api/') && path !== '/api/health') {
+    const clientKey = rateLimitKey(req);
+    const verdict = rateLimiter.check(clientKey);
+    if (!verdict.allowed) {
+      res.setHeader('Retry-After', String(verdict.retryAfterSec));
+      sendResponse(res, {
+        status: 429,
+        body: {
+          error: {
+            code: 'RATE_LIMITED',
+            message: `Too many requests. Retry after ${verdict.retryAfterSec}s.`,
+          },
+        },
+      });
+      return;
+    }
   }
 
   if (!path.startsWith('/api/')) {
@@ -236,6 +275,16 @@ function isAuthorized(req: IncomingMessage, token: string): boolean {
   const provided = Array.isArray(header) ? header[0] : header;
   if (!provided?.startsWith('Bearer ')) return false;
   return safeTokenEquals(provided.slice('Bearer '.length).trim(), token);
+}
+
+/** Rate-limit bucket key: remote address + bearer token fingerprint. */
+function rateLimitKey(req: IncomingMessage): string {
+  const header = req.headers['authorization'];
+  const provided = Array.isArray(header) ? header[0] : header;
+  const tokenPart = provided?.startsWith('Bearer ')
+    ? createHash('sha256').update(provided.slice('Bearer '.length)).digest('hex').slice(0, 16)
+    : 'anon';
+  return `${req.socket.remoteAddress ?? 'unknown'}|${tokenPart}`;
 }
 
 /** Constant-time token comparison (length-independent via SHA-256). */

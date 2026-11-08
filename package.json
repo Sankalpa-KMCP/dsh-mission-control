@@ -10,6 +10,7 @@
     "test:integration": "node --experimental-strip-types tests/run-integration.ts",
     "typecheck": "node --experimental-strip-types scripts/typecheck.ts",
     "start": "node --experimental-strip-types packages/server/src/main.ts",
+    "demo": "node --experimental-strip-types scripts/demo-mission.ts",
     "dashboard:build": "npm run build --prefix packages/dashboard",
     "dashboard:dev": "npm run dev --prefix packages/dashboard"
   },

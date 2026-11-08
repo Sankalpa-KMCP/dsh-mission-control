@@ -10,11 +10,12 @@ Transform the repository into a comprehensive, production-oriented autonomous mu
 
 ## Current Git State
 
-- **Branch:** `feat/m3-dashboard` (work in progress — M4 dashboard)
+- **Branch:** `main` (M4 merged; starting M5/M7 work)
 - **Main branch:** `main`
 - **Merged PRs:**
   - PR #1 — `feat(kernel): Milestone M1 Autonomous Team Kernel` — **MERGED** (merge commit `5061a00`, 2026-11-08). 48/48 tests + typecheck green before merge.
   - PR #2 — `feat(orchestrator): Milestone M2 Mission engine and REST/SSE API` — **MERGED** (merge commit `1d1b567`, 2026-11-08). 77/77 tests + typecheck green before merge.
+  - PR #3 — `feat(dashboard): Milestone M4 Mission Control dashboard` — **MERGED** (merge commit `f9856e2`, 2026-11-08). 78/78 tests + typecheck + vite build + full browser E2E green before merge.
 
 ## Completed Milestones
 
@@ -22,7 +23,7 @@ Transform the repository into a comprehensive, production-oriented autonomous mu
 |---|---|---|
 | M1 — Kernel | ✅ Merged (PR #1) | `packages/kernel`: SqliteStore (node:sqlite, WAL, CAS), ModelPolicyEngine (16 workers / depth 3 / Gemini route), DelegationGateway (9-step admission), TaskScheduler (cycle detection, critical path, write-scope collision avoidance, deadlock slot reservation), RecoveryController, VerificationGate |
 | M2 — Mission engine + REST/SSE API | ✅ Merged (PR #2) | `packages/orchestrator` (MissionControlHub, per-mission engine loop, simulated planner/verifier), `packages/server` (zero-dep node:http REST + SSE replay + constant-time bearer auth + static serving + env validation). Terminal-blocker propagation, orphan requeue, per-request idempotency keys, shutdown guards |
-| M4 — Dashboard | 🚧 This branch (feature-complete, E2E-verified in browser; PR #3 pending) | `packages/dashboard`: React 18 + Vite 5 + TS, zero-runtime-dep beyond react/react-dom; hash routing; SSE live store w/ polling fallback; SVG DAG/board/timeline/agent-tree/capacity-ring; dark design system; views: Overview, Missions (+create modal), Mission Detail (6 tabs), Agent Hierarchy, Execution Monitor (filters/autoscroll), System & Config (token entry, diagnostics). Server auto-serves `packages/dashboard/dist` when built (unset env) — `MISSION_CONTROL_STATIC_DIR=""` disables, explicit path wins |
+| M4 — Dashboard | ✅ Merged (PR #3) | `packages/dashboard`: React 18 + Vite 5 + TS; views Overview / Missions / Mission Detail (6 tabs) / Agent Hierarchy / Execution Monitor / System & Config; SSE live store w/ polling fallback; SVG DAG/board/timeline/tree/capacity ring; ErrorBoundary; server auto-serves built dist |
 
 ## Verified Test Outcomes (latest on this branch)
 
@@ -51,11 +52,10 @@ Transform the repository into a comprehensive, production-oriented autonomous mu
 
 ## Next Prioritized Work
 
-1. **(this branch)** Commit dashboard + fixes → push → **PR #3** → verify → merge.
-2. Demonstration mission script exercising the full lifecycle with faults (retries, rework, uncertain recovery) via API — `scripts/demo-mission.ts` or curl walkthrough documented.
+1. Demonstration mission script exercising the full lifecycle with faults (retries, rework, uncertain recovery) — `scripts/demo-mission.ts` + `npm run demo`.
+2. M7: security hardening pass — rate limiting, validation audit, path traversal tests.
 3. M5: execution adapter hardening + DSH connection guide (connected mode must report "unconfigured" honestly until credentials exist).
-4. M7: security hardening pass — rate limiting, validation audit, path traversal tests.
-5. M10: documentation — README refresh, architecture, API reference, config reference, operator guide, known limitations.
+4. M10: documentation — README refresh, architecture, API reference, config reference, operator guide, known limitations.
 
 ## Resume Instructions
 

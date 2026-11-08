@@ -127,3 +127,26 @@ Model enforcement cannot rely on any single hook or behavioral prompt. The platf
 4. **Milestone M4: Mission Control Dashboard**
    - Graphical React-based monitoring and telemetry interface.
    - Real-time agent status, task graph visualization, and audit logs.
+
+---
+
+## As-Built Implementation Map (updated M5/M7 delivery, 2026-11-08)
+
+The specification above maps to the codebase as follows:
+
+| Spec concept | As-built location |
+|---|---|
+| Domain model, contracts, limits (16 workers / depth 3 / authorized route) | `packages/contracts` |
+| Task ledger state manager (SQLite, WAL, CAS, audit journal, idempotency) | `packages/kernel/src/state/sqlite-store.ts` (+ migrations) |
+| Model policy engine (routing, task-adaptive reasoning, no substitution) | `packages/kernel/src/policy/model-policy-engine.ts` |
+| Trusted delegation gateway (9-step atomic admission, capacity holds) | `packages/kernel/src/gateway/delegation-gateway.ts` |
+| Dependency scheduler (cycle detection, critical path, write-scope collision avoidance, dead-blocker propagation) | `packages/kernel/src/scheduler/task-scheduler.ts` |
+| Independent verification state machine (verifier ≠ author, stale-artifact rejection) | `packages/kernel/src/verification/verification-gate.ts` |
+| Recovery controller (restart reconciliation, uncertain holds) | `packages/kernel/src/recovery/recovery-controller.ts` |
+| Deterministic runtime simulator + fault injection | `packages/runtime-simulator` |
+| Chief orchestrator / mission engine loop (plan → schedule → delegate → verify → complete/fail) | `packages/orchestrator/src/engine/mission-engine.ts`, `mission-control-hub.ts` |
+| Mission Control API (REST + SSE replay, auth, rate limiting, static serving) | `packages/server` |
+| Mission Control UI (overview, workspace, DAG/board/timeline, hierarchy, monitor, system panel) | `packages/dashboard` |
+| DSH Core adapter boundary (pinned `b830ec9` / v0.2.1-rc.5) | `packages/dsh-adapter` |
+
+Delivery status: M1 (kernel), M2 (mission engine + API), M4 (dashboard), M5 (connection guide), M7 (rate limiting + honest connected-mode guard) are merged to `main` — 82 tests green. The simulated runtime is the only execution transport; `MISSION_CONTROL_MODE=connected` refuses to start until a real adapter implementing the pinned contract exists (see `docs/mission-control/DSH_CONNECTION.md`).

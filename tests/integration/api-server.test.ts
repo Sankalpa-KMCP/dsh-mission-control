@@ -8,9 +8,10 @@
 
 import { describe, it, afterEach } from 'node:test';
 import assert from 'node:assert';
-import { mkdtempSync, rmSync } from 'node:fs';
+import { existsSync, mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { loadConfigFromEnv, ConfigValidationError } from '../../packages/server/src/config.ts';
 import { createMissionControlServer } from '../../packages/server/src/index.ts';
 import { MissionControlHub } from '../../packages/orchestrator/src/index.ts';
@@ -506,5 +507,29 @@ describe('Server configuration validation', () => {
       () => loadConfigFromEnv({ MISSION_CONTROL_MODE: 'telepathy' } as unknown as NodeJS.ProcessEnv),
       ConfigValidationError
     );
+  });
+
+  it('resolves the dashboard static dir: explicit path, explicit off, or bundled default', () => {
+    // Explicit path wins verbatim.
+    const explicit = loadConfigFromEnv({
+      MISSION_CONTROL_STATIC_DIR: 'some/build/dir',
+    } as unknown as NodeJS.ProcessEnv);
+    assert.strictEqual(explicit.staticDir, 'some/build/dir');
+
+    // Empty string explicitly disables static serving.
+    const disabled = loadConfigFromEnv({
+      MISSION_CONTROL_STATIC_DIR: '',
+    } as unknown as NodeJS.ProcessEnv);
+    assert.strictEqual(disabled.staticDir, null);
+
+    // Unset: auto-detects the bundled dashboard build when it exists,
+    // otherwise null.
+    const auto = loadConfigFromEnv({ MISSION_CONTROL_DB: ':memory:' } as unknown as NodeJS.ProcessEnv);
+    const bundled = join(dirname(fileURLToPath(import.meta.url)), '..', '..', 'packages', 'dashboard', 'dist');
+    if (existsSync(bundled)) {
+      assert.strictEqual(auto.staticDir, bundled);
+    } else {
+      assert.strictEqual(auto.staticDir, null);
+    }
   });
 });

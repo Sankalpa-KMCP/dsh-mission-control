@@ -10,6 +10,9 @@
  *   explicit opt-in (MISSION_CONTROL_ALLOW_UNAUTHENTICATED_EXPOSURE=1).
  */
 
+import { existsSync } from 'node:fs';
+import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import type { FaultConfig } from '../../runtime-simulator/src/index.ts';
 
 export type ExecutionMode = 'simulation' | 'connected';
@@ -69,7 +72,7 @@ export function loadConfigFromEnv(env: NodeJS.ProcessEnv = process.env): ServerC
     1000
   );
   const corsOrigins = parseOrigins(env['MISSION_CONTROL_CORS_ORIGINS'] ?? 'http://localhost:5173,http://127.0.0.1:5173');
-  const staticDir = env['MISSION_CONTROL_STATIC_DIR']?.trim() || null;
+  const staticDir = resolveStaticDir(env['MISSION_CONTROL_STATIC_DIR']);
 
   return {
     host,
@@ -84,6 +87,23 @@ export function loadConfigFromEnv(env: NodeJS.ProcessEnv = process.env): ServerC
     corsOrigins,
     staticDir,
   };
+}
+
+/**
+ * Static root for the dashboard. Precedence:
+ *  - MISSION_CONTROL_STATIC_DIR set to a path: served as-is (if it exists).
+ *  - Set to an empty string: static serving explicitly disabled.
+ *  - Unset: auto-detect the bundled dashboard build (packages/dashboard/dist)
+ *    relative to this file, so `npm start` serves the dashboard out of the box
+ *    once it has been built.
+ */
+function resolveStaticDir(explicit: string | undefined): string | null {
+  if (explicit !== undefined) {
+    return explicit.trim() || null;
+  }
+  const here = dirname(fileURLToPath(import.meta.url)); // packages/server/src
+  const bundledDist = join(here, '..', '..', 'dashboard', 'dist');
+  return existsSync(bundledDist) ? bundledDist : null;
 }
 
 function parsePort(value: string): number {

@@ -8,57 +8,96 @@
 
 **DSH Mission Control** is a private, portable autonomous multi-agent software engineering platform designed to integrate with the DeepSeek Harness (DSH-Portable) runtime environment. It coordinates hierarchical AI agent swarms to analyze, plan, implement, verify, and deliver software engineering tasks autonomously while enforcing strict model routing policies and operational isolation.
 
+**Honest simulation, always labelled:** until a real DSH Core adapter is connected, all execution runs on the deterministic simulated runtime and is labelled `simulated` end-to-end — in the API, the audit trail, the verification evidence, and the dashboard. Nothing is ever disguised as real model activity. Setting `MISSION_CONTROL_MODE=connected` without an adapter **refuses to start** rather than faking it (see [DSH_CONNECTION.md](docs/mission-control/DSH_CONNECTION.md)).
+
 ---
 
 ## 2. Core Architectural Principles
 
-- **Dedicated Monorepo Structure**: Isolated TypeScript monorepo architecture maintained independently from core harness modifications.
+- **Dedicated Monorepo Structure**: Isolated TypeScript monorepo architecture maintained independently from core harness modifications. Backend packages have **zero external npm dependencies** (Node ≥ 22.5, `node --experimental-strip-types`).
 - **Layered Gemini Model Routing & Enforcement**:
   - **Chief Orchestrator**: Default route is `Gemini-3.8-flash` with `high` reasoning effort for planning, task decomposition, architectural alignment, and final delivery verification. The Chief model remains configurable independently from worker constraints.
-  - **Delegated Agents & Workers**: Strictly restricted to provider `antigravity-manager` and model `Gemini-3.8-flash` across all execution contexts. Unauthorized routes are rejected without fallback.
+  - **Delegated Agents & Workers**: Strictly restricted to provider `antigravity-manager` and model `Gemini-3.8-flash` across all execution contexts. Unauthorized routes are rejected without fallback — no silent model substitution or downgrade.
   - **Task-Adaptive Worker Reasoning**: Reasoning efforts calibrated dynamically per task tier (`high` for architecture/security/debugging, `medium` for routine implementation, `low` for mechanical extraction/formatting).
-- **Concurrency & Recursion Limits**:
-  - Hard maximum of 16 concurrent active or reserved delegated workers across managed missions.
-  - Maximum delegation depth capped at 3 levels below Chief.
-- **Resilience & State Recovery**:
-  - Authoritative SQLite database with monotonic event-log journaling.
-  - Monotonic revision-based Compare-And-Set (CAS) task updates.
-  - Durable execution intents, idempotency keys, and crash recovery reconciliation.
-- **Independent Verification Gate**:
-  - Mandatory read-only verification passes by dedicated verification agents prior to merge or task completion.
-  - Stale verification results tied to obsolete artifact revisions are strictly rejected.
-- **DSH Core Adapter Boundary**:
-  - Clean separation through typed adapter interfaces compatible with DSH Core (`0.2.1-rc.5`, commit `b830ec950faba0a46dda564be3e2d854afed94f1`).
+- **Concurrency & Recursion Limits**: Hard maximum of **16 concurrent** active or reserved delegated workers; delegation depth capped at **3 levels** below Chief.
+- **Resilience & State Recovery**: Authoritative SQLite database (WAL, monotone migrations) with monotonic audit-event journaling, revision-based Compare-And-Set (CAS) task updates, durable idempotency keys, orphan requeue, and crash-recovery reconciliation of every non-terminal activation.
+- **Independent Verification Gate**: Mandatory verification by a delegated worker distinct from the task's author before completion; stale verification results tied to obsolete artifact revisions are strictly rejected; inconclusive or failed verdicts trigger bounded rework.
+- **DSH Core Adapter Boundary**: Clean separation through typed adapter interfaces compatible with DSH Core (`0.2.1-rc.5`, commit `b830ec950faba0a46dda564be3e2d854afed94f1`).
+- **Security posture**: loopback-only bind by default; constant-time bearer-token auth; SSE-only query-token path; CORS allowlist; 1 MiB body cap; path-traversal-guarded static serving; sliding-window API rate limiting with `Retry-After`; `/api/health` exempt as an unauthenticated liveness probe.
 
 ---
 
-## 3. Repository Structure
+## 3. Quick Start
+
+```bash
+# 1. Build the dashboard (React 18 + Vite 5; only frontend deps are installed)
+npm run dashboard:build
+
+# 2. Start the server (auto-serves the built dashboard)
+npm start
+# → DSH Mission Control server listening on http://127.0.0.1:4310
+
+# 3. Open the dashboard
+#    http://127.0.0.1:4310  →  Executive Overview
+
+# 4. Or watch a deterministic demonstration mission in the terminal
+npm run demo
+```
+
+Create a mission from the dashboard (**Missions → + New Mission → Start Mission**) and watch it plan, delegate, verify, and complete live — agents, tasks, evidence, and audit trail all update over SSE.
+
+Requirements: Node.js ≥ 22.5 (v26 tested). No database server, no pnpm, no build step for the backend.
+
+---
+
+## 4. Repository Structure
 
 ```text
 dsh-mission-control/
 ├── packages/
-│   ├── contracts/          # Shared domain models, schemas, and interfaces
-│   ├── kernel/             # SQLite state store, policy engine, gateway, scheduler, recovery
-│   ├── runtime-simulator/  # Deterministic fake runtime with fault injection and seeds
-│   └── dsh-adapter/        # Typed adapter contracts and mocks for future DSH integration
+│   ├── contracts/          # Shared domain models, branded IDs, limits, error types
+│   ├── kernel/             # SQLite state store, policy engine, delegation gateway,
+│   │                       #   task scheduler, verification gate, recovery controller
+│   ├── runtime-simulator/  # Deterministic simulated runtime with fault injection (seeded)
+│   ├── orchestrator/       # MissionControlHub, mission engine loop, simulated planner/verifier
+│   ├── server/             # Zero-dependency node:http REST + SSE API, auth, rate limiting,
+│   │                       #   static serving, env config validation
+│   ├── dashboard/          # React 18 + Vite 5 dark-mode command center (the only package
+│   │                       #   with external dependencies: react, react-dom)
+│   └── dsh-adapter/        # Typed adapter contracts + mock for future DSH Core integration
+├── scripts/                # typecheck.ts (architecture invariants), demo-mission.ts
+├── tests/                  # unit + integration + HTTP E2E suites (node:test)
 ├── docs/
-│   └── architecture/       # System architecture and design documentation
-├── package.json            # Monorepo root workspace configuration
-├── pnpm-workspace.yaml     # pnpm workspace configuration
-├── tsconfig.base.json      # Strict TypeScript base compiler configuration
-└── .gitignore
+│   ├── architecture/       # System architecture specification
+│   └── mission-control/    # API reference, config reference, operator guide,
+│                           #   DSH connection guide, execution state
+├── package.json            # Workspace scripts (start, demo, test, typecheck, dashboard:*)
+└── tsconfig.base.json      # Strict TypeScript base compiler configuration
 ```
 
 ---
 
-## 4. Current Status
+## 5. Current Status
 
-- **Stage**: Orchestration Kernel + Mission Engine + HTTP API (M1 merged; M2 in review)
+- **Stage**: M1 kernel, M2 mission engine + REST/SSE API, M4 dashboard, M5 DSH connection guide, M7 security hardening — **merged to `main`**.
 - **Implemented and verified**:
-  - Kernel: SQLite persistence (WAL, monotone migrations), CAS task transitions, 16-worker capacity enforcement, delegation depth ≤ 3, independent verification gate, dependency scheduler with cycle detection, terminal-blocker propagation, and crash-recovery reconciliation.
-  - Orchestrator (`packages/orchestrator`): deterministic mission planner, mission engine (plan → schedule → delegate → verify → complete/fail), bounded retries, pause/resume/cancel, orphan requeue, durable recovery on restart.
-  - Server (`packages/server`): zero-dependency `node:http` REST API + SSE event streams, bearer-token auth (constant-time comparison), CORS allowlist, strict config validation, static dashboard serving.
-  - 77 automated tests (unit + integration + HTTP E2E) passing; architecture typecheck passing.
-- **Running the server**: `npm start` (defaults: `http://127.0.0.1:4310`, SQLite at `data/mission-control.db`; see `docs/mission-control/EXECUTION_STATE.md` for environment variables).
-- **Next**: graphical Mission Control dashboard (React), GitHub operations integration, DSH connection guide.
+  - Kernel: SQLite persistence (WAL, monotone migrations), CAS task transitions, 16-worker capacity enforcement, delegation depth ≤ 3, independent verification gate, dependency scheduler with cycle detection / critical-path weighting / write-scope collision avoidance / terminal-blocker propagation, crash-recovery reconciliation.
+  - Orchestrator: deterministic mission planner (9-task DAG with acceptance criteria), mission engine (plan → schedule → delegate → verify → complete/fail), transient-refusal backoff without attempt burn, bounded retries, pause/resume/cancel, orphan requeue after grace ticks, durable recovery on restart, per-request idempotency keys.
+  - Server: zero-dependency `node:http` REST API + SSE event streams with `Last-Event-ID` replay, bearer-token auth (constant-time), CORS allowlist, sliding-window rate limiting, strict config validation, static dashboard serving with path-traversal guard.
+  - Dashboard: executive overview, mission workspace with creation modal, mission detail (task table / kanban board / dependency DAG / Gantt timeline / verification evidence / audit trail), agent hierarchy tree with capacity ring, live execution monitor with event filters, system & config panel; SSE live store with polling fallback; ErrorBoundary crash screen. Verified end-to-end in a real browser.
+  - **82 automated tests** (unit + integration + HTTP E2E) passing; architecture typecheck passing; demo mission runs green.
+- **Next**: GitHub operations integration (server-side `gh`), real DSH Core adapter implementation (contract already pinned), validation/UX polish.
 - **License**: Private & Confidential — All rights reserved.
+
+---
+
+## 6. Documentation
+
+| Document | Purpose |
+|---|---|
+| [docs/architecture/README.md](docs/architecture/README.md) | System architecture specification |
+| [docs/mission-control/API_REFERENCE.md](docs/mission-control/API_REFERENCE.md) | Every REST endpoint + SSE protocol |
+| [docs/mission-control/CONFIG_REFERENCE.md](docs/mission-control/CONFIG_REFERENCE.md) | All `MISSION_CONTROL_*` environment variables |
+| [docs/mission-control/OPERATOR_GUIDE.md](docs/mission-control/OPERATOR_GUIDE.md) | Running, auth, recovery, troubleshooting, known limitations |
+| [docs/mission-control/DSH_CONNECTION.md](docs/mission-control/DSH_CONNECTION.md) | DSH Core integration state + future steps |
+| [docs/mission-control/EXECUTION_STATE.md](docs/mission-control/EXECUTION_STATE.md) | Durable autonomous-development execution record |

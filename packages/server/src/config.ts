@@ -33,6 +33,10 @@ export interface ServerConfig {
   readonly corsOrigins: readonly string[];
   /** Directory served as the dashboard static root (built frontend). */
   readonly staticDir: string | null;
+  /** Max API requests per client per rate-limit window; 0 disables. */
+  readonly rateLimitMaxRequests: number;
+  /** Rate-limit window length in milliseconds. */
+  readonly rateLimitWindowMs: number;
 }
 
 export class ConfigValidationError extends Error {
@@ -73,6 +77,15 @@ export function loadConfigFromEnv(env: NodeJS.ProcessEnv = process.env): ServerC
   );
   const corsOrigins = parseOrigins(env['MISSION_CONTROL_CORS_ORIGINS'] ?? 'http://localhost:5173,http://127.0.0.1:5173');
   const staticDir = resolveStaticDir(env['MISSION_CONTROL_STATIC_DIR']);
+  const rateLimitMaxRequests = parseNonNegativeInt(
+    env['MISSION_CONTROL_RATE_LIMIT_MAX'] ?? '240',
+    'MISSION_CONTROL_RATE_LIMIT_MAX'
+  );
+  const rateLimitWindowMs = clamp(
+    parseNonNegativeInt(env['MISSION_CONTROL_RATE_LIMIT_WINDOW_MS'] ?? '60000', 'MISSION_CONTROL_RATE_LIMIT_WINDOW_MS'),
+    1000,
+    3_600_000
+  );
 
   return {
     host,
@@ -86,6 +99,8 @@ export function loadConfigFromEnv(env: NodeJS.ProcessEnv = process.env): ServerC
     orphanGraceTicks,
     corsOrigins,
     staticDir,
+    rateLimitMaxRequests,
+    rateLimitWindowMs,
   };
 }
 

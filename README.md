@@ -1,12 +1,20 @@
 # DSH Mission Control
 
+<p align="center">
+  <img src="https://img.shields.io/badge/Language-TypeScript%205.5-blue?style=for-the-badge&logo=typescript" alt="TypeScript" />
+  <img src="https://img.shields.io/badge/Node.js-%E2%89%A5%2022.5-green?style=for-the-badge&logo=node.js" alt="Node.js" />
+  <img src="https://img.shields.io/badge/Tests-82%20Passing-success?style=for-the-badge" alt="Tests" />
+  <img src="https://img.shields.io/badge/Frontend-React%2018%20%2B%20Vite%205-61dafb?style=for-the-badge&logo=react" alt="React" />
+  <img src="https://img.shields.io/badge/License-MIT-yellow?style=for-the-badge" alt="License: MIT" />
+</p>
+
 > Portable autonomous multi-agent software engineering platform built on DeepSeek Harness, featuring hierarchical Gemini agents, intelligent scheduling, independent verification, and a graphical Mission Control dashboard.
 
 ---
 
 ## 1. Overview
 
-**DSH Mission Control** is a private, portable autonomous multi-agent software engineering platform designed to integrate with the DeepSeek Harness (DSH-Portable) runtime environment. It coordinates hierarchical AI agent swarms to analyze, plan, implement, verify, and deliver software engineering tasks autonomously while enforcing strict model routing policies and operational isolation.
+**DSH Mission Control** is an autonomous multi-agent software engineering platform designed to integrate with the DeepSeek Harness (DSH-Portable) runtime environment. It coordinates hierarchical AI agent swarms to analyze, plan, implement, verify, and deliver software engineering tasks autonomously while enforcing strict model routing policies and operational isolation.
 
 **Honest simulation, always labelled:** until a real DSH Core adapter is connected, all execution runs on the deterministic simulated runtime and is labelled `simulated` end-to-end — in the API, the audit trail, the verification evidence, and the dashboard. Nothing is ever disguised as real model activity. Setting `MISSION_CONTROL_MODE=connected` without an adapter **refuses to start** rather than faking it (see [DSH_CONNECTION.md](docs/mission-control/DSH_CONNECTION.md)).
 
@@ -87,7 +95,7 @@ dsh-mission-control/
   - Dashboard: executive overview, mission workspace with creation modal, mission detail (task table / kanban board / dependency DAG / Gantt timeline / verification evidence / audit trail), agent hierarchy tree with capacity ring, live execution monitor with event filters, system & config panel; SSE live store with polling fallback; ErrorBoundary crash screen. Verified end-to-end in a real browser.
   - **82 automated tests** (unit + integration + HTTP E2E) passing; architecture typecheck passing; demo mission runs green.
 - **Next**: GitHub operations integration (server-side `gh`), real DSH Core adapter implementation (contract already pinned), validation/UX polish.
-- **License**: Private & Confidential — All rights reserved.
+- **License**: [MIT](LICENSE)
 
 ---
 
